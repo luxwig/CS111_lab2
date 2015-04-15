@@ -76,6 +76,9 @@ start(void)
 	for (i = 0; i < NPROCS; i++) {
 		proc_array[i].p_pid = i;
 		proc_array[i].p_state = P_EMPTY;
+		int t;
+		for (t = 0; t < NPROCS; t++)
+			proc_array[i].p_wait_queue[t] = 0;
 	}
 
 	// The first process has process ID 1.
@@ -170,6 +173,17 @@ interrupt(registers_t *reg)
 		// for this register out of 'current->p_registers'.
 		current->p_state = P_ZOMBIE;
 		current->p_exit_status = current->p_registers.reg_eax;
+		//all the processes waiting for this process can now be running again
+		int i;
+		for (i = 1; i < NPROCS; i++)
+		{
+			if (current->p_wait_queue[i] == 1)
+			{
+				proc_array[i].p_state = P_RUNNABLE;
+				current->p_wait_queue[i] = 0;
+			}
+
+		}
 		schedule();
 
 	case INT_SYS_WAIT: {
@@ -186,10 +200,17 @@ interrupt(registers_t *reg)
 						   if (p <= 0 || p >= NPROCS || p == current->p_pid
 							   || proc_array[p].p_state == P_EMPTY)
 							   current->p_registers.reg_eax = -1;
+						   //put caller to sleep if the process not exit yet
+						   if (proc_array[p].p_state != P_ZOMBIE)
+						   {
+							   current->p_state = P_BLOCKED;
+							   proc_array[p].p_wait_queue[current->p_pid] = 1;
+						   }
 						   else if (proc_array[p].p_state == P_ZOMBIE)
+						   {
 							   current->p_registers.reg_eax = proc_array[p].p_exit_status;
-						   else
-							   current->p_registers.reg_eax = WAIT_TRYAGAIN;
+							   current->p_state = P_RUNNABLE;
+						   }
 						   schedule();
 	}
 
